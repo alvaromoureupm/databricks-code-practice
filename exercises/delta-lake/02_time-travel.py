@@ -1,5 +1,9 @@
 # Databricks notebook source
-# COMMAND ----------
+# /// script
+# [tool.databricks.environment]
+# base_environment = "workspace-base-environments/customv4-9v0eo2egu0"
+# environment_version = "4"
+# ///
 # MAGIC %md
 # MAGIC # Time Travel & Restore
 # MAGIC **Topic**: Delta Lake | **Exercises**: 7 | **Checkpoints**: 1 | **Total Time**: ~90 min
@@ -33,6 +37,7 @@
 # MAGIC %run ./setup/time-travel-setup
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC **Setup complete.** Exercise tables are in `{CATALOG}.{SCHEMA}` (time_travel schema).
 # MAGIC Base tables (orders, customers) are in `{CATALOG}.{BASE_SCHEMA}` (delta_lake schema).
@@ -51,6 +56,7 @@
 # MAGIC assertions work regardless of auto-OPTIMIZE behavior. Version 0 (CTAS) is always safe.
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 1: Query by Version Number
 # MAGIC **Difficulty**: Easy | **Time**: ~5 min
@@ -88,6 +94,7 @@ assert result.filter("order_id = 'ORD-005'").count() == 1, \
 print("Exercise 1 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 2: Query by Timestamp
 # MAGIC **Difficulty**: Easy | **Time**: ~10 min
@@ -130,6 +137,7 @@ assert result.filter("order_id = 'ORD-003'").select("amount").collect()[0][0] ==
 print("Exercise 2 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Checkpoint 3: DESCRIBE HISTORY
 # MAGIC **Time**: ~5 min
@@ -182,6 +190,7 @@ assert row.num_dml_operations == TT_EX3_DML_COUNT, \
 print("Exercise 3 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 4: RESTORE to Previous Version
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -222,6 +231,7 @@ assert result.filter("amount > 0").count() == 5, \
 print("Exercise 4 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 5: Diff Two Versions
 # MAGIC **Difficulty**: Medium | **Time**: ~15 min
@@ -272,6 +282,7 @@ assert "ORD-101" in changed_ids, "ORD-101 was added and should be in changes"
 print("Exercise 5 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 6: Audit Trail
 # MAGIC **Difficulty**: Medium | **Time**: ~15 min
@@ -300,11 +311,40 @@ print("Exercise 5 passed!")
 
 # COMMAND ----------
 
+from delta.tables import DeltaTable
+
+delta = DeltaTable.forName(spark, f"{CATALOG}.{SCHEMA}.tt_ex6_orders")
+delta.toDF().display()
+delta.history().display()
+
+# COMMAND ----------
+
+fraudulent_version = 2
+primary_key = "order_id"
+
+fraud_ver_delta = (
+    spark.read.format("delta")
+    .option("versionAsOf", 2)
+    .table(f"{CATALOG}.{SCHEMA}.tt_ex6_orders")
+)
+prev_delta = (
+    spark.read.format("delta")
+    .option("versionAsOf", fraudulent_version - 1)
+    .table(f"{CATALOG}.{SCHEMA}.tt_ex6_orders")
+)
+
+new_records_df = fraud_ver_delta.join(prev_delta, on=primary_key, how="anti")
+
+bad_order_id = new_records_df.select("order_id").collect()[0][0]
+print(bad_order_id)
+
+# COMMAND ----------
+
 # EXERCISE_KEY: tt_ex6
 # TODO: Investigate versions to find who introduced the bad data, then fill in values
 
-bad_version = 0        # Replace: the version number that introduced the fraudulent order
-bad_order_id = ""      # Replace: the order_id of the fraudulent order
+bad_version = 2        # Replace: the version number that introduced the fraudulent order
+bad_order_id = "ORD-999"      # Replace: the order_id of the fraudulent order
 
 spark.sql(f"""
     CREATE OR REPLACE TABLE {CATALOG}.{SCHEMA}.tt_ex6_audit AS
@@ -323,6 +363,7 @@ assert row.bad_order_id == "ORD-999", f"Bad order_id is ORD-999, got {row.bad_or
 print("Exercise 6 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 7: Selective Undo via MERGE + Time Travel
 # MAGIC **Difficulty**: Hard | **Time**: ~20 min
@@ -349,8 +390,40 @@ print("Exercise 6 passed!")
 
 # COMMAND ----------
 
+v0_df = spark.read.option("versionAsOf", 0).table(f"{CATALOG}.{SCHEMA}.tt_ex7_orders")
+v1_df = spark.read.option("versionAsOf", 1).table(f"{CATALOG}.{SCHEMA}.tt_ex7_orders")
+
+v0_df.display()
+v1_df.display()
+
+# COMMAND ----------
+
 # EXERCISE_KEY: tt_ex7
 # TODO: Use MERGE with time travel to selectively undo the bad update
+from delta.tables import DeltaTable
+
+v0_df = spark.read.option("versionAsOf", 0).table(f"{CATALOG}.{SCHEMA}.tt_ex7_orders")
+v1_df = spark.read.option("versionAsOf", 1).table(f"{CATALOG}.{SCHEMA}.tt_ex7_orders")
+
+
+target_delta = DeltaTable.forName(spark, f"{CATALOG}.{SCHEMA}.tt_ex7_orders")
+
+irrelevant_cols = {col: f"s.{col}" for col in v1_df.columns if col not in ["status", "order_id"]}
+print(irrelevant_cols)
+
+(
+    target_delta.alias("t")
+    .merge(v0_df.alias("s"), condition="s.order_id=t.order_id")
+    .whenMatchedUpdate(
+        condition="t.status='cancelled' AND t.amount < 100",
+        set={
+            "status": "s.status",
+            **irrelevant_cols
+        }
+    )
+).execute()
+
+
 
 # Your code here
 
@@ -374,6 +447,7 @@ assert bad_rows == 0, f"Found {bad_rows} incorrectly cancelled rows (amount < 10
 print("Exercise 7 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 8: Reproducible Reporting with Time Travel
 # MAGIC **Difficulty**: Hard | **Time**: ~15 min
@@ -403,11 +477,33 @@ print("Exercise 7 passed!")
 
 # COMMAND ----------
 
+from delta.tables import DeltaTable
+from pyspark.sql.types import DoubleType, LongType, StructType, StructField
+import pyspark.sql.functions as F
+
+# COMMAND ----------
+
 # EXERCISE_KEY: tt_ex8
 # TODO: Create the revenue report from the INSERT version (TT_EX8_INSERT_V)
 
 # Your code here
 
+wrong_ver_df = spark.read.option("versionAsOf", TT_EX8_INSERT_V).table(f"{CATALOG}.{SCHEMA}.tt_ex8_orders")
+prev_ver_df = spark.read.option("versionAsOf", TT_EX8_INSERT_V - 1).table(f"{CATALOG}.{SCHEMA}.tt_ex8_orders")
+
+delta_df = wrong_ver_df.join(prev_ver_df.select("order_id"), on="order_id", how="anti")
+
+order_count = wrong_ver_df.count()
+total_ammount = wrong_ver_df.select(F.sum("amount")).collect()[0][0]
+
+report_df = spark.createDataFrame(
+    data=[(order_count, total_ammount)], 
+    schema=StructType([
+        StructField("order_count", LongType(), True),
+        StructField("total_amount", DoubleType(), True)
+    ]))
+
+report_df.write.mode("overwrite").option("overWriteSchema", True).saveAsTable(f"{CATALOG}.{SCHEMA}.tt_ex8_report")
 
 # COMMAND ----------
 
@@ -431,3 +527,6 @@ assert row.total_amount < current_total, \
     "Report total should be less than current total (which has corrupted 100x amounts)"
 
 print("Exercise 8 passed!")
+
+# COMMAND ----------
+

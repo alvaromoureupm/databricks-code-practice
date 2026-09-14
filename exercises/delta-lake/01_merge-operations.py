@@ -1,5 +1,8 @@
 # Databricks notebook source
-# COMMAND ----------
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # MERGE Operations
 # MAGIC **Topic**: Delta Lake | **Exercises**: 9 | **Total Time**: ~90 min
@@ -34,6 +37,7 @@
 # MAGIC %run ./setup/merge-operations-setup
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC **Setup complete.** Exercise tables are in `{CATALOG}.{SCHEMA}` (merge_operations schema).
 # MAGIC Base tables (orders, customers) are in `{CATALOG}.{BASE_SCHEMA}` (delta_lake schema).
@@ -47,6 +51,7 @@
 # MAGIC - Ex 9 (hard): `merge_ex9_target` + `_source` - source has extra `discount_pct` column
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 1: Basic Upsert
 # MAGIC **Difficulty**: Easy | **Time**: ~5 min
@@ -87,6 +92,7 @@ assert result.filter("order_id = 'ORD-001'").select("amount").collect()[0][0] ==
 print("Exercise 1 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 2: Insert-Only Merge
 # MAGIC **Difficulty**: Easy | **Time**: ~5 min
@@ -128,6 +134,7 @@ assert ord001_status != "shipped", \
 print("Exercise 2 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 3: Update-Only Merge
 # MAGIC **Difficulty**: Easy | **Time**: ~5 min
@@ -169,6 +176,7 @@ assert result.filter("order_id = 'ORD-004'").select("status").collect()[0][0] !=
 print("Exercise 3 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 4: Deduplicate Before Merge
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -211,6 +219,7 @@ assert result.filter("order_id = 'ORD-101'").count() == 1, "ORD-101 should be in
 print("Exercise 4 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 5: Conditional Merge - Only Update If Newer
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -257,6 +266,7 @@ assert result.filter("order_id = 'ORD-101'").count() == 1, "ORD-101 should be in
 print("Exercise 5 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 6: MERGE with DELETE Clause
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -298,6 +308,7 @@ assert result.filter("order_id = 'ORD-101'").count() == 1, "ORD-101 should be in
 print("Exercise 6 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 7: Multi-Condition MERGE
 # MAGIC **Difficulty**: Hard | **Time**: ~15 min
@@ -320,8 +331,31 @@ print("Exercise 6 passed!")
 
 # COMMAND ----------
 
+merge_ex7_source_df = spark.read.table(f"{CATALOG}.{SCHEMA}.merge_ex7_source")
+display(merge_ex7_source_df)
+
+# COMMAND ----------
+
+target.restoreToVersion(0)
+
+# COMMAND ----------
+
 # EXERCISE_KEY: merge_ex7
-# TODO: Write your solution here
+
+from delta.tables import DeltaTable
+
+merge_ex7_source_df = spark.read.table(f"{CATALOG}.{SCHEMA}.merge_ex7_source")
+
+target = DeltaTable.forName(spark, f"{CATALOG}.{SCHEMA}.merge_ex7_target")
+
+(
+    target.alias("t")
+    .merge(
+        merge_ex7_source_df.alias("s"), "s.order_id=t.order_id")
+    .whenMatchedDelete(condition="s.status='cancelled'")
+    .whenMatchedUpdateAll(condition="s.status!='cancelled' and s.updated_at > t.updated_at")
+    .whenNotMatchedInsertAll()
+).execute()
 
 # Your code here
 
@@ -346,6 +380,7 @@ assert result.filter("order_id = 'ORD-102'").count() == 1, "ORD-102 should be in
 print("Exercise 7 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 8: SCD Type 2 with MERGE
 # MAGIC **Difficulty**: Hard | **Time**: ~20 min
@@ -388,11 +423,84 @@ print("Exercise 7 passed!")
 
 # COMMAND ----------
 
+display(target_delta.restoreToVersion(3))
+
+# COMMAND ----------
+
 # EXERCISE_KEY: merge_ex8
+import pyspark.sql.functions as F
 # TODO: Write your solution here
+source_df = spark.table(f"{CATALOG}.{SCHEMA}.merge_ex8_source")
+target_df = spark.table(f"{CATALOG}.{SCHEMA}.merge_ex8_target")
+
 
 # Your code here
 
+from delta.tables import DeltaTable
+
+target_delta = DeltaTable.forName(spark, f"{CATALOG}.{SCHEMA}.merge_ex8_target")
+
+# Updated Records
+records_to_update = (
+    source_df.alias("s")
+    .join(
+        target_df.alias("t"), 
+        on=(F.col("s.customer_id")==F.col("t.customer_id")) & (F.col("t.is_current")==True),
+        how="inner")
+    .filter(
+        ~(F.col("s.name").eqNullSafe(F.col("t.name"))) | 
+        ~(F.col("s.tier").eqNullSafe(F.col("t.tier"))) |
+        ~(F.col("s.email").eqNullSafe(F.col("t.email"))) |
+        ~(F.col("s.region").eqNullSafe(F.col("t.region")))
+    ).withColumn("mergeKey", F.col("s.customer_id"))
+    .select("mergeKey", "s.*")
+)
+
+# New and updated records (will be plainly inserted in whenNotMacthInsert)
+new_and_records_to_update = (
+    source_df.alias("s")
+    .join(
+        target_df.alias("t"), 
+        on=(F.col("s.customer_id")==F.col("t.customer_id")) & (F.col("t.is_current")==True),
+        how="left")
+    .filter(
+        F.col("s.customer_id").isNull() |
+        ~(F.col("s.name").eqNullSafe(F.col("t.name"))) | 
+        ~(F.col("s.tier").eqNullSafe(F.col("t.tier"))) |
+        ~(F.col("s.email").eqNullSafe(F.col("t.email"))) |
+        ~(F.col("s.region").eqNullSafe(F.col("t.region")))
+    ).withColumn("mergeKey", F.lit(None)).select("mergeKey", "s.*")
+)
+
+updated_df = records_to_update.unionAll(new_and_records_to_update)
+
+(
+    target_delta.alias("t").merge(
+    updated_df.alias("s"), condition="t.customer_id <=> s.mergeKey AND t.is_current = true")
+    .whenMatchedUpdate(
+        set={
+            "t.is_current": F.lit(False),
+            "t.effective_end_date": F.to_date(F.current_timestamp())
+        }
+    )
+    .whenNotMatchedInsert(
+        values={
+            "is_current": F.lit(True),
+            "effective_start_date": F.to_date(F.current_timestamp()),
+            "effective_end_date": F.to_date(F.lit("9999-12-31")),
+            "name": "s.name",
+            "tier": "s.tier",
+            "email": "s.email",
+            "region": "s.region",
+            "customer_id": "s.customer_id"
+
+        }
+    )
+).execute()
+
+# COMMAND ----------
+
+spark.table(f"{CATALOG}.{SCHEMA}.merge_ex8_target").display()
 
 # COMMAND ----------
 
@@ -424,6 +532,7 @@ print("Exercise 8 passed!")
 print("Idempotency: re-run your TODO cell then this cell. Assertions must still pass.")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 9: MERGE with Schema Evolution
 # MAGIC **Difficulty**: Hard | **Time**: ~15 min
@@ -450,6 +559,19 @@ print("Idempotency: re-run your TODO cell then this cell. Assertions must still 
 # EXERCISE_KEY: merge_ex9
 # TODO: Write your solution here
 
+from delta.tables import DeltaTable
+
+target_delta = DeltaTable.forName(spark,f"{CATALOG}.{SCHEMA}.merge_ex9_target" )
+source = spark.read.table(f"{CATALOG}.{SCHEMA}.merge_ex9_source")
+
+(
+    target_delta.alias("t")
+    .merge(source.alias("s"), condition="s.order_id=t.order_id")
+    .withSchemaEvolution()
+    .whenMatchedUpdateAll()
+    .whenNotMatchedInsertAll()
+).execute()
+
 # Your code here
 
 
@@ -469,3 +591,10 @@ assert result.filter("order_id = 'ORD-002'").select("discount_pct").collect()[0]
     "ORD-002 should have null discount_pct (not in source)"
 
 print("Exercise 9 passed!")
+
+# COMMAND ----------
+
+import pyspark.pipelines as dp
+
+# COMMAND ----------
+

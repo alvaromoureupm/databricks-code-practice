@@ -1,5 +1,8 @@
 # Databricks notebook source
-# COMMAND ----------
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # OPTIMIZE & File Management
 # MAGIC **Topic**: Delta Lake | **Exercises**: 6 | **Checkpoints**: 2 | **Total Time**: ~80 min
@@ -33,6 +36,7 @@
 # MAGIC %run ./setup/optimize-file-mgmt-setup
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC **Setup complete.** Exercise tables are in `{CATALOG}.{SCHEMA}` (optimize_file_mgmt schema).
 # MAGIC Base tables (orders) are in `{CATALOG}.{BASE_SCHEMA}` (delta_lake schema).
@@ -44,6 +48,7 @@
 # MAGIC - `opt_ex8_orders` - pre-optimized fragmented table (for history analysis)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Checkpoint 1: Inspect File Count and Size
 # MAGIC **Time**: ~5 min
@@ -84,6 +89,7 @@ assert result.size_bytes > 0, f"sizeInBytes should be positive, got {result.size
 print("Exercise 1 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 2: Run OPTIMIZE to Compact Files
 # MAGIC **Difficulty**: Easy | **Time**: ~5 min
@@ -120,6 +126,7 @@ assert row_count >= 18, f"Data should be preserved after OPTIMIZE, got {row_coun
 print("Exercise 2 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 3: OPTIMIZE with ZORDER
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -167,6 +174,7 @@ assert 'zOrderBy' in str(params), "OPTIMIZE should include zOrderBy in parameter
 print("Exercise 3 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 4: Measure File Metrics Before and After OPTIMIZE
 # MAGIC **Difficulty**: Medium | **Time**: ~15 min
@@ -211,6 +219,7 @@ assert row.before_files > row.after_files, \
 print("Exercise 4 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 5: Set VACUUM Retention Period
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -249,6 +258,7 @@ assert retention_rows[0].value == "168 hours", \
 print("Exercise 5 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 6: Run VACUUM and Verify
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -288,6 +298,7 @@ assert vacuum_ops > 0, "Should have at least one VACUUM operation in history"
 print("Exercise 6 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Checkpoint 7: Table Health Report from DESCRIBE DETAIL
 # MAGIC **Time**: ~5 min
@@ -329,6 +340,7 @@ assert row.size_bytes > 0, f"Size should be positive, got {row.size_bytes}"
 print("Exercise 7 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 8: Analyze OPTIMIZE History
 # MAGIC **Difficulty**: Hard | **Time**: ~15 min

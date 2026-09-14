@@ -1,5 +1,8 @@
 # Databricks notebook source
-# COMMAND ----------
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # Schema Enforcement & Evolution
 # MAGIC **Topic**: Delta Lake | **Exercises**: 12 | **Total Time**: ~125 min
@@ -34,6 +37,7 @@
 # MAGIC %run ./setup/schema-enforcement-setup
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC **Setup complete.** Exercise tables are in `{CATALOG}.{SCHEMA}` (schema_enforcement schema).
 # MAGIC Base tables (orders, products) are in `{CATALOG}.{BASE_SCHEMA}` (delta_lake schema).
@@ -51,6 +55,7 @@
 # MAGIC - Ex 12 (hard): `schema_ex12_target` + `_source` - constrained target, source has invalid rows
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 1: Write with Matching Schema
 # MAGIC **Difficulty**: Easy | **Time**: ~5 min
@@ -73,6 +78,11 @@
 
 # Your code here
 
+source = spark.read.table(f"{CATALOG}.{SCHEMA}.schema_ex1_source")
+target = spark.read.table(f"{CATALOG}.{SCHEMA}.schema_ex1_target")
+
+source.write.mode("append").saveAsTable(f"{CATALOG}.{SCHEMA}.schema_ex1_target")
+
 
 # COMMAND ----------
 
@@ -86,6 +96,7 @@ assert result.filter("order_id = 'ORD-103'").count() == 1, "ORD-103 should be in
 print("Exercise 1 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 2: Handle Schema Mismatch on Write
 # MAGIC **Difficulty**: Easy | **Time**: ~5 min
@@ -108,6 +119,12 @@ print("Exercise 1 passed!")
 
 # EXERCISE_KEY: schema_ex2
 # TODO: Insert source rows into target using only the matching columns
+source = spark.read.table(f"{CATALOG}.{SCHEMA}.schema_ex2_source")
+target = spark.read.table(f"{CATALOG}.{SCHEMA}.schema_ex2_target")
+
+common_cols = target.columns
+
+source.select(common_cols).write.mode("append").saveAsTable(f"{CATALOG}.{SCHEMA}.schema_ex2_target")
 
 # Your code here
 
@@ -125,6 +142,7 @@ assert result.filter("order_id = 'ORD-101'").count() == 1, "ORD-101 should be in
 print("Exercise 2 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 3: Additive Schema Evolution with mergeSchema
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -153,6 +171,13 @@ print("Exercise 2 passed!")
 
 # Your code here
 
+source = spark.read.table(f"{CATALOG}.{SCHEMA}.schema_ex3_source")
+target = spark.read.table(f"{CATALOG}.{SCHEMA}.schema_ex3_target")
+
+
+
+source.write.mode("append").option("mergeSchema", True).saveAsTable(f"{CATALOG}.{SCHEMA}.schema_ex3_target")
+
 
 # COMMAND ----------
 
@@ -170,6 +195,7 @@ assert result.filter("order_id = 'ORD-101'").select("discount_pct").collect()[0]
 print("Exercise 3 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 4: Overwrite Schema for Breaking Change
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -212,6 +238,7 @@ assert "order_id" not in result.columns, "Old orders schema should be gone"
 print("Exercise 4 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 5: Handle Column Type Mismatch
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -254,6 +281,7 @@ assert isinstance(val, float), f"amount should be DOUBLE (float), got {type(val)
 print("Exercise 5 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 6: NOT NULL Constraint Enforcement
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -280,6 +308,9 @@ print("Exercise 5 passed!")
 
 # Your code here
 
+#spark.sql(f"ALTER TABLE {CATALOG}.{SCHEMA}.schema_ex6_orders ALTER COLUMN status SET NOT NULL")
+spark.sql(f"INSERT INTO {CATALOG}.{SCHEMA}.schema_ex6_orders VALUES ('ORD-101', 'CUST-010', 'PROD-005', 49.99, 'pending', DATE '2026-03-01', TIMESTAMP '2026-03-01 10:00:00')")
+
 
 # COMMAND ----------
 
@@ -296,6 +327,7 @@ assert not status_field.nullable, "status column should be NOT NULL"
 print("Exercise 6 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 7: CHECK Constraint Enforcement
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -322,6 +354,10 @@ print("Exercise 6 passed!")
 
 # Your code here
 
+spark.sql(f"ALTER TABLE {CATALOG}.{SCHEMA}.schema_ex7_orders ADD CONSTRAINT positive_amount CHECK (amount > 0)")
+spark.sql(
+    f"INSERT INTO {CATALOG}.{SCHEMA}.schema_ex7_orders VALUES ('ORD-101', 'CUST-010', 'PROD-005', 49.99, 'pending', DATE '2026-03-01', TIMESTAMP '2026-03-01 10:00:00')"
+)
 
 # COMMAND ----------
 
@@ -338,6 +374,7 @@ assert check_rows > 0, "Should have at least one CHECK constraint"
 print("Exercise 7 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 8: Drop a Constraint
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -358,6 +395,7 @@ print("Exercise 7 passed!")
 
 # EXERCISE_KEY: schema_ex8
 # TODO: Drop the positive_amount CHECK constraint
+spark.sql(f"ALTER TABLE {CATALOG}.{SCHEMA}.schema_ex8_orders DROP CONSTRAINT positive_amount")
 
 # Your code here
 
@@ -378,6 +416,7 @@ assert not status_field.nullable, "status NOT NULL constraint should still exist
 print("Exercise 8 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 9: Query Table Properties for Constraints
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -426,6 +465,7 @@ assert any("amount > 0" in expr for expr in expressions), \
 print("Exercise 9 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 10: Schema Evolution Through MERGE
 # MAGIC **Difficulty**: Hard | **Time**: ~15 min
@@ -454,8 +494,14 @@ print("Exercise 9 passed!")
 # EXERCISE_KEY: schema_ex10
 # TODO: Enable schema evolution and MERGE source into target
 
-# Your code here
+from delta.tables import DeltaTable
 
+delta = DeltaTable.forName(spark, f"{CATALOG}.{SCHEMA}.schema_ex10_target")
+source_df = spark.read.table(f"{CATALOG}.{SCHEMA}.schema_ex10_source")
+
+delta.alias("t").merge(
+    source_df.alias("s"), condition="s.order_id = t.order_id"
+).whenMatchedUpdateAll().whenNotMatchedInsertAll().withSchemaEvolution().execute()
 
 # COMMAND ----------
 
@@ -475,6 +521,7 @@ assert result.filter("order_id = 'ORD-101'").select("shipping_cost").collect()[0
 print("Exercise 10 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 11: Constraint Violation Handling
 # MAGIC **Difficulty**: Hard | **Time**: ~15 min
@@ -510,6 +557,14 @@ print("Exercise 10 passed!")
 # TODO: Filter out constraint-violating rows and insert only valid ones
 
 # Your code here
+spark.sql(f"""
+    INSERT INTO {CATALOG}.{SCHEMA}.schema_ex11_orders
+    SELECT 'ORD-201', 'CUST-020', 'PROD-005', 49.99, 'pending', DATE '2026-03-01', TIMESTAMP '2026-03-01 10:00:00'
+    UNION ALL
+    SELECT 'ORD-202', 'CUST-021', 'PROD-003', -10.00, 'completed', DATE '2026-03-01', TIMESTAMP '2026-03-01 10:00:00'
+    UNION ALL
+    SELECT 'ORD-203', 'CUST-022', 'PROD-001', 75.00, NULL, DATE '2026-03-01', TIMESTAMP '2026-03-01 10:00:00'
+""")
 
 
 # COMMAND ----------
@@ -525,6 +580,7 @@ assert result.filter("order_id = 'ORD-203'").count() == 0, "ORD-203 (null status
 print("Exercise 11 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 12: MERGE with Constraint-Safe Filtering
 # MAGIC **Difficulty**: Hard | **Time**: ~15 min

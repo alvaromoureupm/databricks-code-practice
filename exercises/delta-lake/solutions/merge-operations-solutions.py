@@ -1,5 +1,8 @@
 # Databricks notebook source
-# COMMAND ----------
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # MERGE Operations - Solutions
 # MAGIC **Topic**: Delta Lake | **Exercises**: 9
@@ -8,6 +11,7 @@
 # MAGIC Try solving the exercises first before looking here.
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 1: Basic Upsert
 # MAGIC
@@ -37,6 +41,7 @@ spark.sql(f"""
 """)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 2: Insert-Only Merge
 # MAGIC
@@ -61,6 +66,7 @@ spark.sql(f"""
 """)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 3: Update-Only Merge
 # MAGIC
@@ -84,6 +90,7 @@ spark.sql(f"""
 """)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 4: Deduplicate Before Merge
 # MAGIC
@@ -128,6 +135,7 @@ spark.sql(f"""
 # """)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 5: Conditional Merge - Only Update If Newer
 # MAGIC
@@ -153,6 +161,7 @@ spark.sql(f"""
 """)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 6: MERGE with DELETE Clause
 # MAGIC
@@ -179,6 +188,7 @@ spark.sql(f"""
 """)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 7: Multi-Condition MERGE
 # MAGIC
@@ -205,6 +215,7 @@ spark.sql(f"""
 """)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 8: SCD Type 2 with MERGE
 # MAGIC
@@ -284,6 +295,11 @@ spark.sql(f"""
 # """)
 
 # COMMAND ----------
+
+
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 9: MERGE with Schema Evolution
 # MAGIC

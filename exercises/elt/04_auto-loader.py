@@ -1,5 +1,8 @@
 # Databricks notebook source
-# COMMAND ----------
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # Auto Loader Ingestion
 # MAGIC **Topic**: ELT | **Exercises**: 6 | **Total Time**: ~75 min
@@ -27,6 +30,7 @@
 # MAGIC %run ./setup/auto-loader-setup
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC **Setup complete.** Exercise files and tables are in `db_code.auto_loader`.
 # MAGIC
@@ -43,6 +47,7 @@
 # MAGIC **Pattern**: Each exercise reads from a source directory, writes to `db_code.auto_loader.exN_output` (except Ex 6 which MERGEs into `ex6_target`).
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 1: Basic cloudFiles Read
 # MAGIC **Difficulty**: Easy | **Time**: ~10 min
@@ -77,11 +82,42 @@
 
 # COMMAND ----------
 
+df = (spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.schemaLocation", schema_location)
+    .load("/Volumes/db_code/auto_loader/source_files/ex1_files/")
+    .select("*", "_metadata"))   # or "_metadata.file_path", "_metadata.file_modification_time"
+
+display(df, checkpointLocation=f"{checkpoint_path}/tmp")
+
+# COMMAND ----------
+
+# DBTITLE 1,Cell 6
 # EXERCISE_KEY: auto_loader_ex1
 # TODO: Read JSON files with Auto Loader and write to Delta table
 
-# Your code here
+checkpoint_path = f"{CHECKPOINT_BASE}/ex1_ckp"
+schema_location = f"{CHECKPOINT_BASE}/ex1_sch"
+# Read from cloudFiles
+df = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.schemaLocation", schema_location)
+    .load("/Volumes/db_code/auto_loader/source_files/ex1_files/")
+)
 
+# Write to Delta table
+query = (
+    df.writeStream
+    .format("delta")
+    .option("checkpointLocation", checkpoint_path)
+    .trigger(availableNow=True)
+    .toTable(f"{CATALOG}.{SCHEMA}.ex1_output")
+)
+
+query.awaitTermination()
 
 # COMMAND ----------
 
@@ -97,6 +133,7 @@ assert result.filter("order_id = 'ORD-210'").count() == 1, "ORD-210 should exist
 print("Exercise 1 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 2: Schema Hints for Type Control
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -123,6 +160,31 @@ print("Exercise 1 passed!")
 
 # EXERCISE_KEY: auto_loader_ex2
 # TODO: Read JSON with schema hints to force amount to DOUBLE
+source_path = "/Volumes/db_code/auto_loader/source_files/ex2_files/"
+checkpoint_path = CHECKPOINT_BASE + "/" + "EX2"
+schema_location_path = CHECKPOINT_BASE + "/" + "EX2_SCH"
+
+input_df = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.schemaLocation", schema_location_path)
+    .option("cloudFiles.schemaHints", "amount DOUBLE")
+    .load(source_path)
+)
+
+
+query = (
+    input_df
+    .writeStream
+    .format("delta")
+    .option("checkpointLocation",checkpoint_path)
+    .trigger(availableNow=True)
+    .toTable("db_code.auto_loader.ex2_output")
+)
+
+query.awaitTermination()
+
 
 # Your code here
 
@@ -145,6 +207,7 @@ assert result.filter("order_id = 'ORD-304'").select("amount").collect()[0][0] ==
 print("Exercise 2 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 3: Schema Evolution Handling
 # MAGIC **Difficulty**: Medium | **Time**: ~15 min
@@ -181,8 +244,51 @@ print("Exercise 2 passed!")
 # EXERCISE_KEY: auto_loader_ex3
 # TODO: Configure Auto Loader with schema evolution to handle new columns
 
+source_1 = "/Volumes/db_code/auto_loader/source_files/ex3_files_batch1/"
+source_2 = "/Volumes/db_code/auto_loader/source_files/ex3_files_batch2/"
+schema_location = f"{CHECKPOINT_BASE}/ex3/sch"
+checkpoint_location = f"{CHECKPOINT_BASE}/ex3/ckp"
+
+batch_1 = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.schemaLocation", schema_location)
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
+    .load(source_1)
+)
+
+(
+    batch_1
+    .writeStream
+    .option("checkpointLocation", checkpoint_location)
+    .trigger(availableNow=True)
+    .toTable("db_code.auto_loader.ex3_output")
+).awaitTermination()
+
 # Your code here
 
+
+# COMMAND ----------
+
+
+batch_2 = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.schemaLocation", schema_location)
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.schemaEvolutionMode", "addNewColumns")
+    .load(source_2)
+)
+
+(
+    batch_2
+    .writeStream
+    .option("checkpointLocation", f"{checkpoint_location}/2")
+    .option("mergeSchema", "true")
+    .trigger(availableNow=True)
+    .toTable("db_code.auto_loader.ex3_output")
+).awaitTermination()
 
 # COMMAND ----------
 
@@ -203,6 +309,11 @@ assert result.filter("order_id = 'ORD-405'").select("priority").collect()[0][0] 
 print("Exercise 3 passed!")
 
 # COMMAND ----------
+
+dbutils.fs.ls(schema_location+"/_schemas")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 4: Rescued Data Column
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -234,6 +345,26 @@ print("Exercise 3 passed!")
 
 # EXERCISE_KEY: auto_loader_ex4
 # TODO: Read JSON with rescued data column enabled
+source_path = "/Volumes/db_code/auto_loader/source_files/ex4_files/"
+checkpoint_location = CHECKPOINT_BASE + "/EX4_CKP"
+schema_location = CHECKPOINT_BASE + "/EX4_SCH"
+
+df = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("cloudFiles.schemaHints", "amount DOUBLE")
+    .option("cloudFiles.schemaLocation", schema_location)
+    .load(source_path)
+)
+
+(
+    df.writeStream
+    .format("delta")
+    .option("checkpointLocation", checkpoint_location)
+    .trigger(availableNow=True)
+    .toTable("db_code.auto_loader.ex4_output")
+).awaitTermination()
 
 # Your code here
 
@@ -258,6 +389,7 @@ assert rescued_505 is not None, "ORD-505 should have rescued data (amount was 'I
 print("Exercise 4 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 5: Auto Loader with CSV Format and Custom Options
 # MAGIC **Difficulty**: Medium | **Time**: ~10 min
@@ -291,9 +423,37 @@ print("Exercise 4 passed!")
 
 # EXERCISE_KEY: auto_loader_ex5
 # TODO: Read CSV files with Auto Loader using pipe delimiter and header
+source_path = "/Volumes/db_code/auto_loader/source_files/ex5_files/"
+schema_location = f"{CHECKPOINT_BASE}/EX5_SCH"
+checkpoint_location = f"{CHECKPOINT_BASE}/EX5_CHK"
 
 # Your code here
 
+df = (
+    spark.readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "csv")
+    .option("delimiter", "|")
+    .option("header", "true")
+    .option("cloudFiles.inferColumnTypes", "true")
+    .option("cloudFiles.schemaHints", "amount DOUBLE")
+    .option("cloudFiles.schemaLocation", schema_location)
+    .load(source_path)
+)
+
+(
+    df.writeStream
+    .format("delta")
+    .option("checkpointLocation", checkpoint_location)
+    .trigger(availableNow=True)
+    .toTable("db_code.auto_loader.ex5_output")
+).awaitTermination()
+
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DROP TABLE db_code.auto_loader.ex5_output
 
 # COMMAND ----------
 
@@ -314,6 +474,7 @@ assert float(amt_554) == 330.00, f"ORD-554 amount should be 330.00, got {amt_554
 print("Exercise 5 passed!")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Exercise 6: Auto Loader + MERGE for Incremental Dedup Upsert
 # MAGIC **Difficulty**: Hard | **Time**: ~20 min
@@ -356,6 +517,38 @@ print("Exercise 5 passed!")
 
 # EXERCISE_KEY: auto_loader_ex6
 # TODO: Auto Loader read + foreachBatch MERGE into target table
+source_path = "/Volumes/db_code/auto_loader/source_files/ex6_files/"
+checkpoint_location = CHECKPOINT_BASE + "/EX6_CHP"
+schema_location = CHECKPOINT_BASE + "/EX6_SCH"
+target_delta = "db_code.auto_loader.ex6_target"
+
+def write_orders(batch_df, batch_id):
+    from delta.tables import DeltaTable
+    delta = DeltaTable.forName(spark, target_delta)
+    (
+        delta
+        .alias("t")
+        .merge(batch_df.alias("s"), condition="s.order_id=t.order_id")
+        .whenMatchedUpdateAll()
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+
+(
+    spark
+    .readStream
+    .format("cloudFiles")
+    .option("cloudFiles.format", "json")
+    .option("inferColumnTypes", "true")
+    .option("cloudFiles.schemaLocation", schema_location)
+    .load(source_path)
+    .writeStream
+    .option("checkpointLocation", checkpoint_location)
+    .trigger(availableNow=True)
+    .foreachBatch(write_orders)
+    .start()
+).awaitTermination()
+
 
 # Your code here
 
@@ -381,3 +574,6 @@ assert result.filter("order_id = 'ORD-604'").select("amount").collect()[0][0] ==
     "ORD-604 amount should be 250.00"
 
 print("Exercise 6 passed!")
+
+# COMMAND ----------
+
